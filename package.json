@@ -13,6 +13,7 @@
     "better-sqlite3": "^11.0.0",
     "ccxt": "^4.4.0",
     "dotenv": "^16.4.5",
+    "technicalindicators": "^3.1.0",
     "node-cron": "^3.0.3",
     "winston": "^3.17.0"
   },
