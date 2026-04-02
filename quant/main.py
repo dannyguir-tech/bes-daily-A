@@ -23,6 +23,7 @@ import time
 sys.path.insert(0, os.path.dirname(__file__))
 
 import config as cfg
+import db
 from alerts import emitter
 from data import fetcher, normalizer, orderbook
 from features import multi_timeframe as mtf
@@ -45,10 +46,10 @@ _oi_prev: dict[str, float] = {}
 
 # ─── Per-symbol live run ───────────────────────────────────────────────────────
 
-def run_symbol(symbol: str) -> None:
+def run_symbol(symbol: str, signal_tf: str = None) -> None:
     """
-    Full pipeline for one symbol:
-      1. Fetch multi-timeframe OHLCV from all exchanges
+    Full pipeline for one symbol on one signal timeframe:
+      1. Fetch OHLCV for the signal TF + its HTF from all exchanges
       2. Compute median price + OBI + OI + funding rate
       3. Build FeatureSet
       4. Detect regime
@@ -57,12 +58,19 @@ def run_symbol(symbol: str) -> None:
       7. Score the signal
       8. ML probability filter
       9. Ensemble decision
-      10. Emit alert
+      10. Emit alert (stdout + SQLite)
     """
+    if signal_tf is None:
+        signal_tf = cfg.PRIMARY_TF
+    htf = cfg.HTF_MAP.get(signal_tf, cfg.HTF)
+    fetch_tfs = list(dict.fromkeys([signal_tf, htf]))  # deduplicated, ordered
+
     try:
         # ── 1. OHLCV data ──────────────────────────────────────────────────
         frames: dict[str, 'pd.DataFrame'] = {}
-        for tf in cfg.TIMEFRAMES:
+        current_median_price = 0.0
+        current_exchange_prices = {}
+        for tf in fetch_tfs:
             exchange_dfs = fetcher.fetch_ohlcv_all_exchanges(symbol, tf)
             if not exchange_dfs:
                 logger.warning("%s: no OHLCV data for %s", symbol, tf)
@@ -70,15 +78,15 @@ def run_symbol(symbol: str) -> None:
             med_price, ex_prices = normalizer.compute_median_price(exchange_dfs)
             df_norm = normalizer.normalize_all(exchange_dfs, tf)
             frames[tf] = df_norm
-            if tf == cfg.PRIMARY_TF:
+            if tf == signal_tf:
                 current_median_price = med_price
                 current_exchange_prices = ex_prices
 
-        if cfg.PRIMARY_TF not in frames or frames[cfg.PRIMARY_TF] is None:
-            logger.warning("%s: missing primary timeframe data, skipping", symbol)
+        if signal_tf not in frames or frames[signal_tf] is None:
+            logger.warning("%s: missing %s data, skipping", symbol, signal_tf)
             return
 
-        frames = normalizer.align_to_primary(frames)
+        frames = normalizer.align_to_primary(frames, primary=signal_tf)
 
         # ── 2. Microstructure data ─────────────────────────────────────────
         obi          = orderbook.get_obi(symbol)
@@ -91,7 +99,7 @@ def run_symbol(symbol: str) -> None:
         btc_frames = None
         if symbol != 'BTCUSDT' and 'BTCUSDT' in cfg.SYMBOLS:
             btc_frames = {}
-            for tf in cfg.TIMEFRAMES:
+            for tf in fetch_tfs:
                 btc_df = fetcher.fetch_binance_ohlcv('BTCUSDT', tf)
                 if btc_df is not None:
                     btc_frames[tf] = btc_df
@@ -107,6 +115,8 @@ def run_symbol(symbol: str) -> None:
             ob_imbalance=obi,
             median_price=current_median_price,
             exchange_prices=current_exchange_prices,
+            primary_tf=signal_tf,
+            htf=htf,
         )
 
         # ── 5. Regime ──────────────────────────────────────────────────────
@@ -118,7 +128,7 @@ def run_symbol(symbol: str) -> None:
         elif regime == 'RANGING':
             signal = mr_sig.generate(fs)
         else:
-            emitter.emit_no_trade(symbol, "regime=UNCERTAIN", regime)
+            emitter.emit_no_trade(symbol, "regime=UNCERTAIN", regime, timeframe=signal_tf)
             return
 
         # ── 7. Risk levels (needed for scoring) ───────────────────────────
@@ -146,13 +156,13 @@ def run_symbol(symbol: str) -> None:
 
         # ── 11. Emit ──────────────────────────────────────────────────────
         if decision.is_trade:
-            emitter.emit_decision(symbol, decision)
+            emitter.emit_decision(symbol, decision, timeframe=signal_tf)
         else:
-            emitter.emit_no_trade(symbol, decision.reject_reason, regime)
+            emitter.emit_no_trade(symbol, decision.reject_reason, regime, timeframe=signal_tf)
 
     except Exception as exc:
-        emitter.emit_error(f"run_symbol({symbol})", exc)
-        logger.exception("Unhandled error in run_symbol(%s)", symbol)
+        emitter.emit_error(f"run_symbol({symbol}, {signal_tf})", exc)
+        logger.exception("Unhandled error in run_symbol(%s, %s)", symbol, signal_tf)
 
 
 # ─── Bootstrap: train ML models before first live run ─────────────────────────
@@ -174,24 +184,42 @@ def bootstrap_models(symbols: list[str]) -> None:
 # ─── Live mode ────────────────────────────────────────────────────────────────
 
 def live(symbols: list[str]) -> None:
-    """Run the signal engine on a schedule."""
+    """
+    Run the signal engine on a multi-timeframe schedule.
+    Each signal timeframe runs on its own cadence (5m every 5 min, 1h every hour, etc.).
+    The main loop ticks every 60 seconds and checks which TFs are due.
+    """
+    db.init_db()
+
     emitter.emit_info(
         f"Quant engine starting — symbols={symbols}, "
-        f"interval={cfg.LIVE_INTERVAL_SECS}s, "
+        f"timeframes={cfg.SIGNAL_TIMEFRAMES}, "
         f"score_threshold={cfg.SCORE_THRESHOLD}, "
         f"ml_threshold={cfg.ML_PROB_THRESHOLD}"
     )
 
     bootstrap_models(symbols)
 
+    # Track last run time per timeframe
+    last_run: dict[str, float] = {}
+    tick_interval = 60  # check every 60 seconds
+
     while True:
         tick_start = time.time()
-        emitter.emit_info(f"--- Tick ({len(symbols)} symbols) ---")
-        for symbol in symbols:
-            run_symbol(symbol)
+        now = tick_start
+
+        for signal_tf in cfg.SIGNAL_TIMEFRAMES:
+            interval_secs = cfg.TF_INTERVALS.get(signal_tf, 300)
+            last = last_run.get(signal_tf, 0)
+
+            if now - last >= interval_secs:
+                emitter.emit_info(f"--- Tick [{signal_tf}] ({len(symbols)} symbols) ---")
+                for symbol in symbols:
+                    run_symbol(symbol, signal_tf=signal_tf)
+                last_run[signal_tf] = now
 
         elapsed = time.time() - tick_start
-        sleep_for = max(0, cfg.LIVE_INTERVAL_SECS - elapsed)
+        sleep_for = max(0, tick_interval - elapsed)
         logger.debug("Tick completed in %.1fs, sleeping %.1fs", elapsed, sleep_for)
         time.sleep(sleep_for)
 

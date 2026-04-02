@@ -2,3 +2,7 @@ node_modules/
 .env
 alerts.log
 *.log
+data/signals.db
+data/signals.db-wal
+data/signals.db-shm
+quant/models/saved/

@@ -63,7 +63,10 @@ def fill_gaps(df: pd.DataFrame, interval: str) -> pd.DataFrame:
     """
     if df is None or df.empty:
         return df
-    freq_map = {'1m': '1min', '5m': '5min', '15m': '15min', '1h': '1h'}
+    freq_map = {
+        '1m': '1min', '5m': '5min', '15m': '15min', '1h': '1h',
+        '4h': '4h', '1d': '1D', '1w': '1W', '1M': '1ME',
+    }
     freq = freq_map.get(interval, '5min')
     full_index = pd.date_range(start=df.index[0], end=df.index[-1], freq=freq, tz='UTC')
     df = df.reindex(full_index).ffill()

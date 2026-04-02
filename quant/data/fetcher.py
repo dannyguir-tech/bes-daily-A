@@ -16,11 +16,19 @@ import config as cfg
 logger = logging.getLogger(__name__)
 
 # Binance interval string map
-_BINANCE_INTERVALS = {'1m': '1m', '5m': '5m', '15m': '15m', '1h': '1h'}
-# Coinbase granularity in seconds
-_COINBASE_GRAN = {'1m': 60, '5m': 300, '15m': 900, '1h': 3600}
-# Kraken interval in minutes
-_KRAKEN_INTERVAL = {'1m': 1, '5m': 5, '15m': 15, '1h': 60}
+_BINANCE_INTERVALS = {
+    '1m': '1m', '5m': '5m', '15m': '15m', '1h': '1h',
+    '4h': '4h', '1d': '1d', '1w': '1w', '1M': '1M',
+}
+# Coinbase granularity in seconds (None = unsupported)
+_COINBASE_GRAN = {
+    '1m': 60, '5m': 300, '15m': 900, '1h': 3600, '1d': 86400,
+}
+# Kraken interval in minutes (None = unsupported)
+_KRAKEN_INTERVAL = {
+    '1m': 1, '5m': 5, '15m': 15, '1h': 60,
+    '4h': 240, '1d': 1440, '1w': 10080,
+}
 
 
 def _get(url: str, params: dict = None, retries: int = 3) -> dict | list | None:
@@ -66,7 +74,9 @@ def fetch_coinbase_ohlcv(symbol: str, interval: str, limit: int = cfg.CANDLE_LIM
     product = cfg.COINBASE_MAP.get(symbol)
     if not product:
         return None
-    gran = _COINBASE_GRAN[interval]
+    gran = _COINBASE_GRAN.get(interval)
+    if gran is None:
+        return None
     end_ts = int(time.time())
     start_ts = end_ts - gran * limit
     url = f"{cfg.COINBASE_BASE}/products/{product}/candles"
@@ -88,8 +98,11 @@ def fetch_kraken_ohlcv(symbol: str, interval: str, limit: int = cfg.CANDLE_LIMIT
     pair = cfg.KRAKEN_MAP.get(symbol)
     if not pair:
         return None
+    kraken_interval = _KRAKEN_INTERVAL.get(interval)
+    if kraken_interval is None:
+        return None
     url = f"{cfg.KRAKEN_BASE}/0/public/OHLC"
-    data = _get(url, {'pair': pair, 'interval': _KRAKEN_INTERVAL[interval]})
+    data = _get(url, {'pair': pair, 'interval': kraken_interval})
     if not data or data.get('error'):
         return None
     result = data.get('result', {})
@@ -141,7 +154,7 @@ def fetch_oi_history(symbol: str, interval: str = '5m', limit: int = 50) -> pd.D
     Returns DataFrame with [oi] indexed by UTC timestamp.
     """
     url = f"{cfg.BINANCE_FUTURES}/futures/data/openInterestHist"
-    period_map = {'1m': '5m', '5m': '5m', '15m': '15m', '1h': '1h'}
+    period_map = {'1m': '5m', '5m': '5m', '15m': '15m', '1h': '1h', '4h': '1h', '1d': '1h', '1w': '1h', '1M': '1h'}
     data = _get(url, {'symbol': symbol, 'period': period_map.get(interval, '5m'), 'limit': limit})
     if not data or not isinstance(data, list):
         return None

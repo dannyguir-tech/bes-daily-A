@@ -33,9 +33,34 @@ KRAKEN_MAP: dict[str, str] = {
 }
 
 # ─── Timeframes ───────────────────────────────────────────────────────────────
-TIMEFRAMES = ['1m', '5m', '15m', '1h']
+TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d', '1w', '1M']
 PRIMARY_TF  = '5m'   # main signal timeframe
-HTF         = '1h'   # higher timeframe for trend alignment
+HTF         = '1h'   # higher timeframe for trend alignment (default for 5m)
+
+# Timeframes that generate independent signals (excludes 1m — too noisy)
+SIGNAL_TIMEFRAMES = ['5m', '15m', '1h', '4h', '1d', '1w', '1M']
+
+# Higher timeframe mapping: each signal TF uses a higher TF for trend confirmation
+HTF_MAP = {
+    '5m':  '1h',
+    '15m': '1h',
+    '1h':  '4h',
+    '4h':  '1d',
+    '1d':  '1w',
+    '1w':  '1M',
+    '1M':  '1M',
+}
+
+# Per-timeframe cadence in seconds (how often each TF generates signals)
+TF_INTERVALS = {
+    '5m':  300,
+    '15m': 900,
+    '1h':  3600,
+    '4h':  14400,
+    '1d':  86400,
+    '1w':  604800,
+    '1M':  2592000,
+}
 
 # ─── Data fetching ────────────────────────────────────────────────────────────
 CANDLE_LIMIT        = 200   # candles per fetch
@@ -104,6 +129,9 @@ ENSEMBLE_WEIGHTS = {
 ALERT_LOG_FILE      = os.getenv('QUANT_LOG_FILE', os.getenv('ALERT_LOG_FILE', 'alerts.log'))
 SIGNAL_JSON_FILE    = os.path.join(os.path.dirname(__file__), 'signals', 'latest.json')
 LIVE_INTERVAL_SECS  = int(os.getenv('QUANT_INTERVAL_SECS', '300'))   # 5 minutes
+
+# ─── Database ────────────────────────────────────────────────────────────────
+DB_PATH = os.getenv('DB_PATH', os.path.join(os.path.dirname(__file__), '..', 'data', 'signals.db'))
 
 # ─── Binance endpoints ────────────────────────────────────────────────────────
 BINANCE_BASE        = 'https://api.binance.com'

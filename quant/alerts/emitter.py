@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config as cfg
+import db
 from models.ensemble import Decision
 
 DIVIDER = '=' * 60
@@ -62,18 +63,18 @@ def _write(text: str) -> None:
             pass
 
 
-def emit_decision(symbol: str, decision: Decision) -> None:
+def emit_decision(symbol: str, decision: Decision, timeframe: str = '5m') -> None:
     """
     Format and emit a full Decision alert.
-    Also writes machine-readable JSON to signals/latest.json.
+    Also writes machine-readable JSON to signals/latest.json and SQLite.
     """
     ts = _ts()
     lines = [DIVIDER]
 
     if decision.is_trade:
-        lines.append(f"  QUANT SIGNAL: {symbol}  [{decision.action}]")
+        lines.append(f"  QUANT SIGNAL: {symbol}  [{decision.action}]  ({timeframe})")
     else:
-        lines.append(f"  QUANT: {symbol}  [NO TRADE]")
+        lines.append(f"  QUANT: {symbol}  [NO TRADE]  ({timeframe})")
     lines.append(f"  {ts}")
     lines.append(DIVIDER)
 
@@ -116,12 +117,13 @@ def emit_decision(symbol: str, decision: Decision) -> None:
 
     _write('\n'.join(lines))
     _save_json(symbol, decision, ts)
+    _save_db(symbol, decision, ts, timeframe)
 
 
-def emit_no_trade(symbol: str, reason: str, regime: str) -> None:
+def emit_no_trade(symbol: str, reason: str, regime: str, timeframe: str = '5m') -> None:
     """Emit a minimal NO TRADE notice (info level, no alert log entry)."""
     ts = _ts()
-    print(f"[{ts}] {symbol}: NO TRADE — {reason} (regime={regime})")
+    print(f"[{ts}] {symbol}: NO TRADE — {reason} (regime={regime}) [{timeframe}]")
 
 
 def emit_info(msg: str) -> None:
@@ -132,6 +134,31 @@ def emit_info(msg: str) -> None:
 def emit_error(context: str, err: Exception) -> None:
     ts = _ts()
     print(f"[{ts}] ERROR [{context}]: {err}", file=sys.stderr)
+
+
+def _save_db(symbol: str, decision: Decision, ts: str, timeframe: str) -> None:
+    """Persist signal to SQLite database."""
+    try:
+        db.insert_signal(
+            symbol=symbol,
+            timeframe=timeframe,
+            action=decision.action,
+            confidence=decision.confidence,
+            entry=decision.entry,
+            stop_loss=decision.stop_loss,
+            take_profit=decision.take_profit,
+            kelly_fraction=decision.kelly_fraction,
+            regime=decision.regime,
+            strategy=decision.strategy,
+            score=decision.score,
+            ml_prob=decision.ml_prob,
+            conditions_met=decision.conditions_met,
+            reject_reason=decision.reject_reason,
+            score_breakdown=decision.score_breakdown,
+            timestamp=ts,
+        )
+    except Exception:
+        pass
 
 
 def _save_json(symbol: str, decision: Decision, ts: str) -> None:

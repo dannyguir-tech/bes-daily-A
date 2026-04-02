@@ -156,7 +156,9 @@ def build_feature_set(symbol: str,
                       funding_rate: float = 0.0,
                       ob_imbalance: float = 0.0,
                       median_price: float = 0.0,
-                      exchange_prices: dict | None = None) -> FeatureSet:
+                      exchange_prices: dict | None = None,
+                      primary_tf: str | None = None,
+                      htf: str | None = None) -> FeatureSet:
     """
     Build a FeatureSet from multi-timeframe OHLCV DataFrames plus external
     market microstructure data.
@@ -172,9 +174,13 @@ def build_feature_set(symbol: str,
     ob_imbalance: order book imbalance [-1, 1]
     median_price: median across exchanges
     exchange_prices: individual exchange prices
+    primary_tf  : signal timeframe (defaults to cfg.PRIMARY_TF)
+    htf         : higher timeframe for trend alignment (defaults to cfg.HTF)
     """
-    primary_tf = cfg.PRIMARY_TF
-    htf = cfg.HTF
+    if primary_tf is None:
+        primary_tf = cfg.PRIMARY_TF
+    if htf is None:
+        htf = cfg.HTF
 
     primary_df = frames.get(primary_tf)
     if primary_df is None or primary_df.empty:

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BES Quant Signals</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="logo">
+        <span class="logo-icon">&#9670;</span>
+        <span class="logo-text">BES Quant</span>
+      </div>
+      <nav class="tf-nav">
+        <button class="tf-btn active" data-tf="all">
+          <span class="tf-icon">&#9638;&#9638;</span>
+          <span class="tf-label">All</span>
+          <span class="tf-count" id="count-all">0</span>
+        </button>
+        <button class="tf-btn" data-tf="5m">
+          <span class="tf-icon">&#9776;</span>
+          <span class="tf-label">5 Min</span>
+          <span class="tf-count" id="count-5m">0</span>
+        </button>
+        <button class="tf-btn" data-tf="15m">
+          <span class="tf-icon">&#9201;</span>
+          <span class="tf-label">15 Min</span>
+          <span class="tf-count" id="count-15m">0</span>
+        </button>
+        <button class="tf-btn" data-tf="1h">
+          <span class="tf-icon">&#8634;</span>
+          <span class="tf-label">1 Hour</span>
+          <span class="tf-count" id="count-1h">0</span>
+        </button>
+        <button class="tf-btn" data-tf="4h">
+          <span class="tf-icon">&#9200;</span>
+          <span class="tf-label">4 Hours</span>
+          <span class="tf-count" id="count-4h">0</span>
+        </button>
+        <button class="tf-btn" data-tf="1d">
+          <span class="tf-icon">&#128197;</span>
+          <span class="tf-label">Daily</span>
+          <span class="tf-count" id="count-1d">0</span>
+        </button>
+        <button class="tf-btn" data-tf="1w">
+          <span class="tf-icon">&#128200;</span>
+          <span class="tf-label">Weekly</span>
+          <span class="tf-count" id="count-1w">0</span>
+        </button>
+        <button class="tf-btn" data-tf="1M">
+          <span class="tf-icon">&#128200;</span>
+          <span class="tf-label">Monthly</span>
+          <span class="tf-count" id="count-1M">0</span>
+        </button>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="content">
+      <header class="topbar">
+        <h1 id="active-tf-title">All Signals</h1>
+        <div class="controls">
+          <select id="symbol-filter">
+            <option value="">All Symbols</option>
+            <option value="BTCUSDT">BTC</option>
+            <option value="ETHUSDT">ETH</option>
+            <option value="SOLUSDT">SOL</option>
+            <option value="LINKUSDT">LINK</option>
+            <option value="UNIUSDT">UNI</option>
+          </select>
+          <span class="last-updated" id="last-updated"></span>
+        </div>
+      </header>
+
+      <div class="signal-grid" id="signal-grid">
+        <div class="empty-state">
+          <p>No signals yet. Start the quant engine to generate signals.</p>
+          <code>python quant/main.py --mode live</code>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
